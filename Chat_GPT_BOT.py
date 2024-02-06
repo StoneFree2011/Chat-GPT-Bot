@@ -7,7 +7,7 @@ import time
 import atexit
 import sqlite3
 import os
-from settings import bot_token, admin_id, browser_xy, enter_xy, answer_xy
+from settings import bot_token, admin_id, browser_xy, enter_xy, answer_xy, pagedown_xy
 
 
 bot = telebot.TeleBot(bot_token) #токен хранится в tokens.py
@@ -48,8 +48,9 @@ def process_messages(): #ответ на запрос
         pyautogui.hotkey('enter')
         while pyperclip.paste() == message.text:
             bot.send_chat_action(message.chat.id, 'typing')
-            time.sleep(2)
-            pyautogui.hotkey('pagedown') #пролистывание строки вниз (на случай, когда текста много)
+            pyautogui.click(pagedown_xy)
+            time.sleep(1)
+            #pyautogui.hotkey('pagedown') #пролистывание строки вниз (на случай, когда текста много)
             pyautogui.click(answer_xy) #корды копирования ответа
             if time.time() - timing > 40.0:
                 timing = time.time()
