@@ -7,7 +7,7 @@ import time
 import atexit
 import sqlite3
 import os
-from settings import bot_token, admin_id, browser_xy, enter_xy, answer_xy
+from settings import bot_token, admin_id, browser_xy, enter_xy, answer_xy, pagedown_xy
 
 
 bot = telebot.TeleBot(bot_token) #токен хранится в tokens.py
@@ -30,12 +30,12 @@ def bot_online(): #включение бота
 
 def help_messages(message):
     bot.send_message(message.chat.id, f"""ℹ️*Советы:*\nЕсли бот долго не отвечает на ваше сообщение, значит очередь слишком большая (либо он сдох). *Не надо спамить!*
-                             \nПри запросе математических рассчетов добавляйте "_Отформатируй в разметке для Телеграм_"
-                             \nВ противном случае ответ может быть *не читаемым*.\nПример:""", parse_mode='Markdown')
+        \nПри запросе математических рассчетов добавляйте "_Отформатируй в разметке для Телеграм_"
+        \nВ противном случае ответ может быть *не читаемым*.\nПример:""", parse_mode='Markdown')
     bot.send_media_group(message.chat.id, [telebot.types.InputMediaPhoto(open('images/math_1.jpg', 'rb')), telebot.types.InputMediaPhoto(open('images/math_2.jpg', 'rb'))])
     bot.send_message(message.chat.id, f"""🌐 [Репозиторий бота на GitHub](https://github.com/StoneFree2011/Chat-GPT-Bot)
-                             \n\nЕсли хотите сообщить об ошибке или передать пару ласковых админу, то используйте команду:
-                             \n/help `Ваше сообщение`""", parse_mode='Markdown')
+        \n\nЕсли хотите сообщить об ошибке или передать пару ласковых админу, то используйте команду:
+        \n/help `Ваше сообщение`""", parse_mode='Markdown')
 
 def process_messages(): #ответ на запрос
     while True:
@@ -46,16 +46,24 @@ def process_messages(): #ответ на запрос
         pyautogui.hotkey('ctrl', 'v') #чтоб это работало ОБЯЗАТЕЛЬНА английская расскладка
         time.sleep(0.1)
         pyautogui.hotkey('enter')
+        flag=False #флаг невозможности получить ответ
         while pyperclip.paste() == message.text:
             bot.send_chat_action(message.chat.id, 'typing')
-            time.sleep(2)
-            pyautogui.hotkey('pagedown') #пролистывание строки вниз (на случай, когда текста много)
+            pyautogui.click(pagedown_xy)
+            time.sleep(0.1)
+            #pyautogui.hotkey('pagedown') #пролистывание строки вниз (на случай, когда текста много)
             pyautogui.click(answer_xy) #корды копирования ответа
-            if time.time() - timing > 40.0:
-                timing = time.time()
+            time.sleep(0.5)
+            if time.time() - timing > 30.0:
+                #timing = time.time()
                 bot.send_message(chat_id = admin_id, text = 'У нас проблемы, босс')
-        time.sleep(1)
-        bot.edit_message_text(chat_id = message.chat.id, message_id = answer.message_id, text = pyperclip.paste(), parse_mode='Markdown')
+            if time.time() - timing > 60.0:
+                bot.edit_message_text(chat_id = message.chat.id, message_id = answer.message_id,
+                    text = f"*Ошибка выполнения запроса.*\nПопробуйте еще раз🥺", parse_mode='Markdown')
+                flag=True
+                break
+        if not flag:
+            bot.edit_message_text(chat_id = message.chat.id, message_id = answer.message_id, text = pyperclip.paste(), parse_mode='Markdown')
         pyautogui.click(enter_xy) #корды строки поиска
         
         try:
@@ -64,7 +72,7 @@ def process_messages(): #ответ на запрос
             cursor.execute(f"SELECT id FROM users WHERE id = '{message.from_user.id}'")
             if cursor.fetchone() is None: #проверка, что юзер уже есть в базе
                 cursor.execute(f"""INSERT INTO users (id, username, history) 
-                               VALUES ('{message.from_user.id}', '{message.from_user.username}', 'Начало диалога: ')""") #добавить, если нет
+                    VALUES ('{message.from_user.id}', '{message.from_user.username}', 'Начало диалога: ')""") #добавить, если нет
                 connect.commit()
             else:
                 cursor.execute(f"UPDATE users SET username = '{message.from_user.username}' WHERE id = '{message.from_user.id}'") #обновить юзернейм, если есть
@@ -73,7 +81,7 @@ def process_messages(): #ответ на запрос
             i = cursor.fetchone() #старая история
             date_format='%d.%m.%Y %H:%M:%S'
             cursor.execute(f"""UPDATE users SET history = '{i[0]}\n🗣{time.strftime(date_format, time.localtime())}
-                           -{message.text}\n🤖 -{pyperclip.paste()}' WHERE id='{message.from_user.id}'""")
+                -{message.text}\n🤖 -{pyperclip.paste()}' WHERE id='{message.from_user.id}'""")
             connect.commit() #в базу занесся диалог
             connect.close()
         except Exception as e:
@@ -83,19 +91,22 @@ def process_messages(): #ответ на запрос
 @bot.message_handler(commands=['start']) #первый запуск
 def welcome(message):
     bot.send_message(message.chat.id, f"""ℹ️Пожалуйста, не спамьте множеством сообщений. Это замедляет генерацию ответов как для вас, так и для других пользователей.
-                     \nЕсли бот долго не отвечает на ваше сообщение, значит очередь слишком большая. *Не надо спамить!* 
-                     \n\nℹ️__Некоторые советы и информацию о боте можно узнать по команде__ /help 
-                     \n\n🤖А теперь, задавайте ваш вопрос!""", parse_mode='Markdown')
-    connect = sqlite3.connect('users.db')
-    cursor = connect.cursor()
-    cursor.execute(f"SELECT id FROM users WHERE id = '{message.from_user.id}'")
-    if cursor.fetchone() is None: #проверка, что юзер уже есть в базе
-        cursor.execute(f"""INSERT INTO users (id, username, history) 
-                       VALUES ('{message.from_user.id}', '{message.from_user.username}', 'Начало диалога:')""") #добавить, если нет
-    else:
-        cursor.execute(f"UPDATE users SET username = '{message.from_user.username}' WHERE id = '{message.from_user.id}'") #обновить юзернейм, если есть
-    connect.commit()
-    connect.close()
+         \nЕсли бот долго не отвечает на ваше сообщение, значит очередь слишком большая. *Не надо спамить!* 
+         \n\nℹ️__Некоторые советы и информацию о боте можно узнать по команде__ /help 
+         \n\n🤖А теперь, задавайте ваш вопрос!""", parse_mode='Markdown')
+    try:
+        connect = sqlite3.connect('users.db')
+        cursor = connect.cursor()
+        cursor.execute(f"SELECT id FROM users WHERE id = '{message.from_user.id}'")
+        if cursor.fetchone() is None: #проверка, что юзер уже есть в базе
+            cursor.execute(f"""INSERT INTO users (id, username, history) 
+                        VALUES ('{message.from_user.id}', '{message.from_user.username}', 'Начало диалога:')""") #добавить, если нет
+        else:
+            cursor.execute(f"UPDATE users SET username = '{message.from_user.username}' WHERE id = '{message.from_user.id}'") #обновить юзернейм, если есть
+        connect.commit()
+        connect.close()
+    except Exception as e:
+            bot.send_message(chat_id = admin_id, text = 'Ошибка занесения в базу: ' + repr(e)) #отправить ошибку админу
 
 @bot.message_handler(commands=['stop']) #остановка работы бота (только для админа)
 def stop(message):
@@ -128,7 +139,7 @@ def help(message):
                 bot.send_message(message.chat.id, f'Сообщение успешно отправлено!')
             except Exception as e:
                 bot.send_message(message.chat.id, f"""❌Неправильное использование команды или ошибка:\n{repr(e)}
-                                 \nЧтобы написать юзеру введите /help@username `ваше сообщение пользователю`""", parse_mode='Markdown')
+                    \nЧтобы написать юзеру введите /help@username `ваше сообщение пользователю`""", parse_mode='Markdown')
         else:
             help_messages(message)
             bot.send_message(message.chat.id, f'Только для админа: Чтобы написать юзеру введите /help@username `ваше сообщение пользователю`', parse_mode='Markdown')
@@ -198,5 +209,4 @@ def bot_offline(): #скрипт завершения программы
         bot.send_message(chat_id = admin_id, text = '❌ Ошибка выключения')
     cursor.close()
     connect.close()
-    #sys.exit() # завершаем программу (почему-то не работает, скорее всего из-за многопоточности)
     os._exit(0) # завершаем программу
