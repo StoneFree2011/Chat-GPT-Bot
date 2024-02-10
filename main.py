@@ -7,6 +7,7 @@ try:
     pyautogui.click(enter_xy) #корды строки запроса
     bot_online()
     threading.Thread(target=process_messages, daemon=True).start()   # Запуск потока для обработки сообщений из очереди
+    #threading.Thread(target=process_activities, daemon=True).start() # Запуск потока для бана спамеров
     bot.polling(none_stop=True) # Запуск бота
 finally: #на случай аварийного завершения работы
     bot_offline()

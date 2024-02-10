@@ -16,7 +16,13 @@ message_queue = queue.Queue() #очередь сообщений
 def bot_online(): #включение бота
     connect = sqlite3.connect('users.db')
     cursor = connect.cursor()
-    cursor.execute("""CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, history TEXT)""")
+    cursor.execute("""CREATE TABLE IF NOT EXISTS users (
+                   id INTEGER PRIMARY KEY, 
+                   username TEXT,
+                   history TEXT,
+                   vip BOOL,
+                   ban BOOL,
+                   activity INTEGER)""")
     connect.commit()
     try:
         all_results = []
@@ -36,6 +42,19 @@ def help_messages(message):
     bot.send_message(message.chat.id, f"""🌐 [Репозиторий бота на GitHub](https://github.com/StoneFree2011/Chat-GPT-Bot)
         \n\nЕсли хотите сообщить об ошибке или передать пару ласковых админу, то используйте команду:
         \n/help `Ваше сообщение`""", parse_mode='Markdown')
+    
+"""def process_activities(): #авто-бан спамеров
+    while True:
+        time.sleep(10)
+        try:
+            connect = sqlite3.connect('users.db')
+            cursor = connect.cursor()
+            cursor.execute("UPDATE users SET ban = 1 WHERE activity > 15") #обнуляем счетчик сообщений
+            cursor.commit()
+            connect.close()
+            bot.send_message(chat_id = admin_id, text = f'Спамер отлетел в бан🤣')
+        except Exception as e:
+            bot.send_message(chat_id = admin_id, text = f'❌ Ошибка автобана {repr(e)}')"""
 
 def process_messages(): #ответ на запрос
     while True:
@@ -47,6 +66,7 @@ def process_messages(): #ответ на запрос
         time.sleep(0.1)
         pyautogui.hotkey('enter')
         flag=False #флаг невозможности получить ответ
+        admin_flag=False #флаг пинга админа
         while pyperclip.paste() == message.text:
             bot.send_chat_action(message.chat.id, 'typing')
             pyautogui.click(pagedown_xy)
@@ -54,14 +74,16 @@ def process_messages(): #ответ на запрос
             #pyautogui.hotkey('pagedown') #пролистывание строки вниз (на случай, когда текста много)
             pyautogui.click(answer_xy) #корды копирования ответа
             time.sleep(0.5)
-            if time.time() - timing > 30.0:
-                #timing = time.time()
-                bot.send_message(chat_id = admin_id, text = 'У нас проблемы, босс')
+            if time.time() - timing > 30.0 and not admin_flag:
+                admin_flag=True
+                bot.send_message(chat_id = admin_id, text = f'У меня проблемы с @{message.chat.username}, босс')
             if time.time() - timing > 60.0:
                 bot.edit_message_text(chat_id = message.chat.id, message_id = answer.message_id,
                     text = f"*Ошибка выполнения запроса.*\nПопробуйте еще раз🥺", parse_mode='Markdown')
                 flag=True
                 break
+            if time.time() - timing > 80.0 and not admin_flag: #это конечно невозможно, но на всякий
+                bot.send_message(chat_id = admin_id, text = f'🧑‍🦼*Проблемы прям пиздец из-за дауна по имени* @{message.chat.username}', parse_mode='Markdown')
         if not flag:
             bot.edit_message_text(chat_id = message.chat.id, message_id = answer.message_id, text = pyperclip.paste(), parse_mode='Markdown')
         pyautogui.click(enter_xy) #корды строки поиска
@@ -69,19 +91,12 @@ def process_messages(): #ответ на запрос
         try:
             connect = sqlite3.connect('users.db')
             cursor = connect.cursor()
-            cursor.execute(f"SELECT id FROM users WHERE id = '{message.from_user.id}'")
-            if cursor.fetchone() is None: #проверка, что юзер уже есть в базе
-                cursor.execute(f"""INSERT INTO users (id, username, history) 
-                    VALUES ('{message.from_user.id}', '{message.from_user.username}', 'Начало диалога: ')""") #добавить, если нет
-                connect.commit()
-            else:
-                cursor.execute(f"UPDATE users SET username = '{message.from_user.username}' WHERE id = '{message.from_user.id}'") #обновить юзернейм, если есть
-                connect.commit()
+            
             cursor.execute(f"SELECT history FROM users WHERE id = '{message.from_user.id}'")
             i = cursor.fetchone() #старая история
             date_format='%d.%m.%Y %H:%M:%S'
-            cursor.execute(f"""UPDATE users SET history = '{i[0]}\n🗣{time.strftime(date_format, time.localtime())}
-                -{message.text}\n🤖 -{pyperclip.paste()}' WHERE id='{message.from_user.id}'""")
+            cursor.execute(f"""UPDATE users SET history = '{i[0]}\n{time.strftime(date_format, time.localtime())}
+                           🗣-{message.text}\n🤖 -{pyperclip.paste()}' WHERE id='{message.from_user.id}'""")
             connect.commit() #в базу занесся диалог
             connect.close()
         except Exception as e:
@@ -99,10 +114,10 @@ def welcome(message):
         cursor = connect.cursor()
         cursor.execute(f"SELECT id FROM users WHERE id = '{message.from_user.id}'")
         if cursor.fetchone() is None: #проверка, что юзер уже есть в базе
-            cursor.execute(f"""INSERT INTO users (id, username, history) 
-                        VALUES ('{message.from_user.id}', '{message.from_user.username}', 'Начало диалога:')""") #добавить, если нет
+            cursor.execute(f"""INSERT INTO users (id, username, history, vip, ban, activity) 
+                    VALUES ('{message.from_user.id}', '@{message.from_user.username}', 'Начало диалога: ', 0, 0, 0)""") #добавить, если нет
         else:
-            cursor.execute(f"UPDATE users SET username = '{message.from_user.username}' WHERE id = '{message.from_user.id}'") #обновить юзернейм, если есть
+            cursor.execute(f"UPDATE users SET username = '@{message.from_user.username}' WHERE id = '{message.from_user.id}'") #обновить юзернейм, если есть
         connect.commit()
         connect.close()
     except Exception as e:
@@ -117,15 +132,14 @@ def stop(message):
  
 @bot.message_handler(commands=['help'], content_types=['text']) #помощь и тех-поддержка
 def help(message):
+    command, _, text_after_command = message.text.partition(' ')
     if message.from_user.id != admin_id:
-        command, _, text_after_command = message.text.partition(' ')
         if command == '/help' and text_after_command: #если указано сообщение
             bot.send_message(chat_id = admin_id, text = f"@{message.from_user.username} передал:\n{text_after_command}")
             bot.send_message(message.chat.id,'Я передал вашу кляузу начальству')
         else:
             help_messages(message)
     else:
-        command, _, text_after_command = message.text.partition('@')
         if command == '/help' and text_after_command: #если указано сообщение
             try:
                 username, _, text = text_after_command.partition(' ')
@@ -139,16 +153,23 @@ def help(message):
                 bot.send_message(message.chat.id, f'Сообщение успешно отправлено!')
             except Exception as e:
                 bot.send_message(message.chat.id, f"""❌Неправильное использование команды или ошибка:\n{repr(e)}
-                    \nЧтобы написать юзеру введите /help@username `ваше сообщение пользователю`""", parse_mode='Markdown')
+                    \nЧтобы написать юзеру введите /help @username `ваше сообщение пользователю`""", parse_mode='Markdown')
         else:
             help_messages(message)
-            bot.send_message(message.chat.id, f'Только для админа: Чтобы написать юзеру введите /help@username `ваше сообщение пользователю`', parse_mode='Markdown')
+            bot.send_message(message.chat.id, f"""*Только для админа:*
+                             \n/help @username `ваше сообщение пользователю` - чтобы написать юзеру
+                             \n/stop - завершить работу бота
+                             \n/log - данные всех пользователей
+                             \n/log @username - история запросов юзера
+                             \n/ban @username - чтобы забанить или разбанить юзера
+                             \n/vip @username - чтобы выдать или забрать випку у юзера
+                             \n/wipe @username - чтобы стереть историю юзера""", parse_mode='Markdown')
          
 
 @bot.message_handler(commands=['log'], content_types=['text']) #только для админа
 def log(message): #логи переписок пользователей
     if message.from_user.id == admin_id: #доступ к команде только у админа
-        command, _, text_after_command = message.text.partition('@')
+        command, _, text_after_command = message.text.partition(' ')
         connect = sqlite3.connect('users.db')
         cursor = connect.cursor()
         try:
@@ -157,22 +178,78 @@ def log(message): #логи переписок пользователей
                 logs= cursor.fetchone()
                 for i in range(0, len(logs[0]), 1000): #учитываем макс длину сообщения телеграм (1024, но взял с запасом)
                     bot.send_message(message.chat.id, logs[0][i:i+1000], parse_mode='Markdown')
-            else: #если команда /log без юзернейма, вывести юзернеймы всех пользователей
-                 cursor.execute("SELECT username FROM users")
-                 usernames=cursor.fetchall()
-                 logs = "\n@".join(i[0] for i in usernames)
-                 bot.send_message(message.chat.id, text=f"Все пользователи бота:\n@{logs}")
+            else: #если команда /log без юзернейма, вывести всех пользователей
+                 cursor.execute("SELECT username, vip, ban, activity FROM users")
+                 logs=cursor.fetchall()
+                 # Формирование строки
+                 result_string = ""
+                 for log in logs:
+                    username, vip, ban, activity = log
+                    vip_icon = "✅" if vip else "❌"
+                    ban_icon= "✅" if ban else "❌"
+                    result_string += f"{username}  Vip: {vip_icon}  Ban: {ban_icon}  Activity: {activity}\n"
+                 bot.send_message(message.chat.id, text=f"Все пользователи бота:\n{result_string}")
             connect.commit()
             connect.close()
         except Exception as e:
             bot.send_message(message.chat.id, '❌ Ошибка логирования '+repr(e))
     else:
         bot.send_message(message.chat.id, 'Это не для тебя было сделано и не для таких, как ты')
-        
+
+@bot.message_handler(commands=['ban'], content_types=['text']) #только для админа
+def ban(message): #вайп истории
+    if message.from_user.id == admin_id:
+        command, _, text_after_command = message.text.partition(' ')
+        if command == '/ban' and text_after_command:
+            # Выполняем команду с текстом
+            connect = sqlite3.connect('users.db')
+            cursor = connect.cursor()
+            try:
+                cursor.execute(f"""UPDATE users SET ban = CASE 
+                               WHEN ban = 0 THEN 1
+                               ELSE 0 
+                               END
+                               WHERE username = '{text_after_command}'""")
+                cursor.execute(f"""UPDATE users SET activity = 0
+                               WHERE username = '{text_after_command}'""") #чтобы он не отлетел в автобан после разбана
+                connect.commit()
+                connect.close()
+                bot.send_message(message.chat.id, f'{text_after_command} успешна отлетел в бан!')
+            except Exception as e:
+                bot.send_message(message.chat.id, '❌ Ошибка бана '+repr(e))
+        else:
+            bot.send_message(message.chat.id, 'Введите /ban @username чтобы забанить или разбанить юзера')
+    else:
+        bot.send_message(message.chat.id, 'Это ты меня забанить собрался??')
+
+@bot.message_handler(commands=['vip'], content_types=['text']) #только для админа
+def vip(message): #вайп истории
+    if message.from_user.id == admin_id:
+        command, _, text_after_command = message.text.partition(' ')
+        if command == '/vip' and text_after_command:
+            # Выполняем команду с текстом
+            connect = sqlite3.connect('users.db')
+            cursor = connect.cursor()
+            try:
+                cursor.execute(f"""UPDATE users SET vip = CASE 
+                               WHEN vip = 0 THEN 1
+                               ELSE 0 
+                               END
+                               WHERE username = '{text_after_command}'""")
+                connect.commit()
+                connect.close()
+                bot.send_message(message.chat.id, f'{text_after_command} успешно получил випку!')
+            except Exception as e:
+                bot.send_message(message.chat.id, '❌ Ошибка бана '+repr(e))
+        else:
+            bot.send_message(message.chat.id, 'Введите /vip @username чтобы выдать или забрать випку у юзера')
+    else:
+        bot.send_message(message.chat.id, 'Я VIP 😎')
+
 @bot.message_handler(commands=['wipe'], content_types=['text']) #только для админа
 def wipe(message): #вайп истории
     if message.from_user.id == admin_id:
-        command, _, text_after_command = message.text.partition('@')
+        command, _, text_after_command = message.text.partition(' ')
         if command == '/wipe' and text_after_command:
             # Выполняем команду с текстом
             connect = sqlite3.connect('users.db')
@@ -180,18 +257,41 @@ def wipe(message): #вайп истории
             try:
                 cursor.execute(f"UPDATE users SET history = 'Начало диалога: ' WHERE username = '{text_after_command}'")
                 connect.commit()
-                connect.close()
-                bot.send_message(message.chat.id, f'История @{text_after_command} успешна стерта!')
+                bot.send_message(message.chat.id, f'История {text_after_command} успешна стерта!')
             except Exception as e:
                 bot.send_message(message.chat.id, '❌ Ошибка вайпа '+repr(e))
         else:
-            bot.send_message(message.chat.id, 'Введите /wipe@username чтобы стереть историю юзера')
+            bot.send_message(message.chat.id, 'Введите /wipe @username чтобы стереть историю юзера')
     else:
         bot.send_message(message.chat.id, 'Это не для тебя было сделано и не для таких, как ты')
     
 @bot.message_handler(content_types=['text'])
 def talk(message): #очередь сообщений
-    message_queue.put(message)
+    try:
+        connect = sqlite3.connect('users.db')
+        cursor = connect.cursor()
+        cursor.execute(f"SELECT id FROM users WHERE id = '{message.from_user.id}'")
+        if cursor.fetchone() is None: #проверка, что юзер уже есть в базе
+            cursor.execute(f"""INSERT INTO users (id, username, history, vip, ban, activity) 
+                VALUES ('{message.from_user.id}', '@{message.from_user.username}', 'Начало диалога: ', 0, 0, 1)""") #добавить, если нет
+            connect.commit()
+        else:
+            cursor.execute(f"UPDATE users SET username = '@{message.from_user.username}' WHERE id = '{message.from_user.id}'") #обновить юзернейм, если есть
+            cursor.execute(f"UPDATE users SET activity = activity + 1 WHERE id = '{message.from_user.id}'") #увеличиваем счетчик сообщений
+            cursor.execute("UPDATE users SET ban = 1 WHERE activity > 9") #даем бан спамерам
+            connect.commit()        
+
+        cursor.execute("SELECT id FROM users WHERE ban = 1")
+        bans = cursor.fetchall()
+        bans = [ban[0] for ban in bans]
+        if message.from_user.id in bans:
+            bot.send_message(message.chat.id, 'Ты в бане, дурачок🤣')
+            bot.send_message(chat_id = admin_id, text = f'🤣Забаненный дурачок по имени @{message.chat.username} пытается отправить запрос') #отправить ошибку админу
+        else:
+            message_queue.put(message)
+        connect.close()
+    except Exception as e:
+        bot.send_message(chat_id = admin_id, text = f'😕Ошибка попытки отправки сообщения у @{message.chat.username}: {repr(e)}') #отправить ошибку админу
 
 @atexit.register
 def bot_offline(): #скрипт завершения программы
@@ -199,6 +299,8 @@ def bot_offline(): #скрипт завершения программы
     cursor = connect.cursor()
     connect.commit()
     try:
+        cursor.execute(f"UPDATE users SET activity = 0") #обнуляем счетчик сообщений
+        connect.commit()
         all_results = []
         for i in cursor.execute("SELECT id FROM users"):
             all_results += i
