@@ -31,6 +31,7 @@ def bot_online(): #включение бота
         connect.commit()
         for i in range(0, len(all_results)):
             bot.send_message(chat_id = all_results[i], text = '🤖 Мои мыслительные процессы запущены')
+            bot.send_chat_action(all_results[i], 'typing')
     except Exception as e:
         bot.send_message(chat_id = admin_id, text = '❌ Ошибка запуска'+repr(e))
 
@@ -42,19 +43,6 @@ def help_messages(message):
     bot.send_message(message.chat.id, f"""🌐 [Репозиторий бота на GitHub](https://github.com/StoneFree2011/Chat-GPT-Bot)
         \n\nЕсли хотите сообщить об ошибке или передать пару ласковых админу, то используйте команду:
         \n/help `Ваше сообщение`""", parse_mode='Markdown')
-    
-"""def process_activities(): #авто-бан спамеров
-    while True:
-        time.sleep(10)
-        try:
-            connect = sqlite3.connect('users.db')
-            cursor = connect.cursor()
-            cursor.execute("UPDATE users SET ban = 1 WHERE activity > 15") #обнуляем счетчик сообщений
-            cursor.commit()
-            connect.close()
-            bot.send_message(chat_id = admin_id, text = f'Спамер отлетел в бан🤣')
-        except Exception as e:
-            bot.send_message(chat_id = admin_id, text = f'❌ Ошибка автобана {repr(e)}')"""
 
 def process_messages(): #ответ на запрос
     while True:
@@ -95,8 +83,8 @@ def process_messages(): #ответ на запрос
             cursor.execute(f"SELECT history FROM users WHERE id = '{message.from_user.id}'")
             i = cursor.fetchone() #старая история
             date_format='%d.%m.%Y %H:%M:%S'
-            cursor.execute(f"""UPDATE users SET history = '{i[0]}\n{time.strftime(date_format, time.localtime())}
-                           🗣-{message.text}\n🤖 -{pyperclip.paste()}' WHERE id='{message.from_user.id}'""")
+            cursor.execute(f"""UPDATE users SET history = 
+                '{i[0]}\n{time.strftime(date_format, time.localtime())}🗣-{message.text}\n🤖 -{pyperclip.paste()}' WHERE id='{message.from_user.id}'""")
             connect.commit() #в базу занесся диалог
             connect.close()
         except Exception as e:
